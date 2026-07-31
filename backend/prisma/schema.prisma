@@ -67,8 +67,8 @@ model Transaction {
   createdAt      DateTime @default(now()) @map("created_at")
 
   shop           User     @relation(fields: [shopId], references: [id], onDelete: Cascade)
-  source         Account? @relation("TransactionSource", fields: [sourceAccount], references: [account_id], onDelete: SetNull)
-  target         Account? @relation("TransactionTarget", fields: [targetAccount], references: [account_id], onDelete: SetNull)
+  source         Account? @relation("TransactionSource", fields: [sourceAccount], references: [id], onDelete: SetNull)
+  target         Account? @relation("TransactionTarget", fields: [targetAccount], references: [id], onDelete: SetNull)
 
   @@index([shopId, createdAt])
   @@index([shopId, trxType])
