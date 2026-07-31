@@ -6,7 +6,6 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../models/transaction_model.dart';
 import '../../../providers/transactions_provider.dart';
-import '../../../shared/widgets/widgets.dart';
 import '../widgets/trx_type_meta.dart';
 
 class TransactionListScreen extends ConsumerStatefulWidget {

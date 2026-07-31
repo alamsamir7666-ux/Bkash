@@ -1,0 +1,28 @@
+# Render Blueprint for Smart Shop Ledger backend.
+# Use this for one-click deploy via https://render.com/deploy.
+# After deploy, set the Supabase DATABASE_URL + DIRECT_URL env vars manually.
+
+services:
+  - type: web
+    name: smart-shop-ledger-api
+    runtime: node
+    rootDir: backend
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    preDeployCommand: npx prisma migrate deploy
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: JWT_EXPIRES_IN
+        value: 7d
+      - key: CORS_ORIGIN
+        value: "*"
+      - key: JWT_SECRET
+        generateValue: true   # Render auto-generates a random value
+      - key: DATABASE_URL
+        sync: false           # Set manually from Supabase (transaction pooler URL)
+      - key: DIRECT_URL
+        sync: false           # Set manually from Supabase (direct connection URL)

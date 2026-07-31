@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../../core/theme/app_theme.dart';
-
 /// Coloured pill used to tag transactions / statuses in lists.
 class StatusPill extends StatelessWidget {
   const StatusPill({

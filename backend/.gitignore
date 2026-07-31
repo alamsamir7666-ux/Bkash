@@ -10,8 +10,8 @@ build/
 .env.local
 .env.production
 
-# Prisma generated
-prisma/migrations/
+# Prisma generated client (runtime)
+node_modules/.prisma/
 
 # Logs
 *.log

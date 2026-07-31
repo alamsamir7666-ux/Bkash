@@ -181,31 +181,141 @@ flutter build apk --debug \
 
 ## Deploying the backend
 
-The backend is a standard Node.js app — any container host works. Recommended options:
+The recommended free-tier stack is **Supabase** (Postgres) + **Render** (Node host). Full step-by-step below.
 
-### Option A: Railway (easiest)
+### Step 1 — Create a Supabase project
 
-1. Push the repo to GitHub.
-2. Go to [railway.app](https://railway.app) → New Project → Deploy from GitHub repo.
-3. Set the root directory to `backend`.
-4. Add a PostgreSQL database (Railway provisions one for you).
-5. Set env vars: `DATABASE_URL` (auto-injected), `JWT_SECRET`, `CORS_ORIGIN`.
-6. Railway auto-runs `npm install` + `npm run build` + `npm start`.
-7. Run `npx prisma migrate deploy && npm run prisma:seed` once via the Railway shell.
+1. Go to <https://supabase.com> → Sign up / log in.
+2. Click **New project** → pick a name like `smart-shop-ledger` → choose a region close to your users → set a strong DB password (save it!).
+3. Wait ~2 min for the project to provision.
+4. Go to **Project Settings → Database → Connection string**.
+5. You'll see three options. Copy both URLs:
 
-### Option B: Render
+   | URL | Use as | Example |
+   | --- | --- | --- |
+   | **Transaction pooler** (port `6543`) | `DATABASE_URL` (runtime) | `postgresql://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:6543/postgres` |
+   | **Direct connection** (port `5432`) | `DIRECT_URL` (migrations) | `postgresql://postgres:<password>@db.<ref>.supabase.co:5432/postgres` |
 
-Same flow as Railway — see [Render docs for Node + Postgres](https://render.com/docs/deploy-node-express-app).
+6. Append query params:
+   - `DATABASE_URL`: append `?pgbouncer=true&connection_limit=1` so Prisma works with Supabase's PgBouncer pool.
+   - `DIRECT_URL`: append `?sslmode=require` for Supabase.
 
-### Option C: Supabase + Vercel/Render
+   Final values look like:
+   ```
+   DATABASE_URL=postgresql://postgres.abc123:yourpassword@aws-0-ap-southeast-1.pooler.supabase.com:6543/postgres?pgbouncer=true&connection_limit=1
+   DIRECT_URL=postgresql://postgres:yourpassword@db.abc123.supabase.co:5432/postgres?sslmode=require
+   ```
 
-1. Create a free [Supabase](https://supabase.com) project — gives you a Postgres DB.
-2. Copy the connection string from Supabase → Settings → Database → Connection string → URI.
-3. Set it as `DATABASE_URL` in your backend host.
-4. Run `npx prisma migrate deploy` to create tables.
-5. Run `npm run prisma:seed` to create demo data.
+### Step 2 — Apply the database schema
 
-After deploying, update the Flutter app's `API_BASE_URL` (either via `--dart-define` or the GitHub Actions variable) and rebuild the APK.
+The repo ships with a pre-generated migration at `backend/prisma/migrations/20260731000000_init/migration.sql`. To apply it:
+
+**Option A — from your laptop** (recommended for first time so you can verify):
+
+```bash
+cd backend
+cp .env.example .env
+# Edit .env and paste the DATABASE_URL and DIRECT_URL from Supabase.
+
+npm install
+npx prisma migrate deploy   # applies the SQL migration to Supabase
+npm run prisma:seed         # creates admin@shop.test / admin123 + sample data
+```
+
+**Option B — let Render do it on first deploy** (we'll set a pre-deploy command in step 3).
+
+### Step 3 — Deploy the backend to Render
+
+1. Go to <https://render.com> → Sign up / log in with GitHub.
+2. **New +** → **Web Service** → select the `Bkash` repo.
+3. Fill in the form:
+
+   | Field | Value |
+   | --- | --- |
+   | **Name** | `smart-shop-ledger-api` (or any name) |
+   | **Region** | Same region as your Supabase project |
+   | **Root Directory** | `backend` |
+   | **Runtime** | Node |
+   | **Build Command** | `npm install && npm run build` |
+   | **Start Command** | `npm start` |
+   | **Pre-Deploy Command** | `npx prisma migrate deploy` |
+
+4. Scroll down to **Environment Variables** and add:
+
+   | Key | Value |
+   | --- | --- |
+   | `DATABASE_URL` | (the Supabase transaction pooler URL with `?pgbouncer=true&connection_limit=1`) |
+   | `DIRECT_URL` | (the Supabase direct URL with `?sslmode=require`) |
+   | `JWT_SECRET` | (run `openssl rand -hex 32` locally to generate a random 64-char string) |
+   | `JWT_EXPIRES_IN` | `7d` |
+   | `CORS_ORIGIN` | `*` (or your Flutter web origin if you build a web version later) |
+
+   Render auto-injects `PORT` — do not set it manually.
+
+5. Click **Create Web Service**. Render will:
+   - Pull the repo, `cd backend`, run `npm install` (auto-generates Prisma client via `postinstall`)
+   - Run the pre-deploy command `npx prisma migrate deploy` (applies the SQL schema to Supabase)
+   - Build TypeScript → `dist/`
+   - Start `node dist/server.js`
+
+6. After ~2-3 min, you'll get a URL like `https://smart-shop-ledger-api.onrender.com`.
+   Test it: open `https://smart-shop-ledger-api.onrender.com/health` in a browser → should return `{"ok":true,"ts":...}`.
+
+7. **Seed the database** (creates demo user + sample data):
+   - In Render dashboard → your web service → **Shell** tab → run:
+     ```
+     npm run prisma:seed
+     ```
+   - You should see `Seeded demo user: admin@shop.test / admin123`.
+
+> ⚠️ Render's free tier sleeps the service after 15 min of inactivity. First request after sleep takes ~30s to wake up. For a production shop, consider the $7/mo starter tier.
+
+### Step 4 — Point the Flutter app at the deployed backend
+
+Now that you have a public backend URL, bake it into the APK:
+
+1. Go to your GitHub repo → **Settings → Secrets and variables → Actions → Variables tab**.
+2. Click **New repository variable**:
+   - Name: `API_BASE_URL`
+   - Value: `https://smart-shop-ledger-api.onrender.com/api`
+3. Trigger a rebuild by pushing an empty commit:
+   ```bash
+   cd smart-shop-ledger
+   git commit --allow-empty -m "rebuild APK with production API URL"
+   git push
+   ```
+4. Wait for the new **Build Flutter APK** run to finish (~8 min).
+5. Download the fresh APK from the Actions artifacts and install on your phone.
+
+### Other deploy options
+
+<details>
+<summary><strong>Railway (alternative to Render)</strong></summary>
+
+1. Go to <https://railway.app> → New Project → Deploy from GitHub repo.
+2. Set root directory to `backend`.
+3. Add a PostgreSQL database (Railway provisions one for you).
+4. Set env vars: `DATABASE_URL` (auto-injected), `DIRECT_URL` (same as DATABASE_URL for Railway's Postgres), `JWT_SECRET`, `CORS_ORIGIN`.
+5. Railway auto-runs `npm install` + `npm run build` + `npm start`.
+6. Run `npx prisma migrate deploy && npm run prisma:seed` once via the Railway shell.
+
+</details>
+
+<details>
+<summary><strong>Local Postgres (dev only)</strong></summary>
+
+```bash
+createdb smart_shop_ledger
+cd backend
+cp .env.example .env
+# Edit .env: DATABASE_URL=postgresql://postgres:postgres@localhost:5432/smart_shop_ledger
+npm install
+npx prisma migrate deploy
+npm run prisma:seed
+npm run dev
+```
+
+</details>
 
 ---
 
