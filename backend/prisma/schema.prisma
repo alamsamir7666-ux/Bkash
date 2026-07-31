@@ -1,0 +1,90 @@
+// Smart Shop Ledger - Prisma schema
+// Mirrors the PostgreSQL tables defined in the app blueprint.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// Shop owner / employee. Authenticated via JWT issued by the backend.
+/// (In the original blueprint this was synced from Firebase Auth; here
+/// the backend owns both auth + profile for stack consistency.)
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  name      String
+  phone     String?
+  role      String   @default("admin") // admin | staff
+  createdAt DateTime @default(now()) @map("created_at")
+
+  accounts     Account[]
+  transactions Transaction[]
+  dailyClosings DailyClosing[]
+
+  @@map("users")
+}
+
+/// A business "pocket" that holds funds (agent bKash, personal bKash, physical cash).
+model Account {
+  id            String   @id @default(uuid()) @map("account_id")
+  shopId        String   @map("shop_id")
+  accountType   String   @map("account_type") // agent_bKash | personal_bKash | physical_cash
+  balance       Decimal  @default(0) @db.Decimal(14, 2)
+  lastUpdated   DateTime @default(now()) @updatedAt @map("last_updated")
+
+  shop          User          @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  sourceTrx     Transaction[] @relation("TransactionSource")
+  targetTrx     Transaction[] @relation("TransactionTarget")
+
+  @@unique([shopId, accountType])
+  @@index([shopId])
+  @@map("accounts")
+}
+
+/// A single ledger entry. Every taka in or out of the shop is recorded here.
+model Transaction {
+  id             String   @id @default(uuid()) @map("trx_id")
+  shopId         String   @map("shop_id")
+  trxType        String   @map("trx_type")
+  // cash_in | cash_out | b2b_receive | b2b_send | send_money | expense | capital_add
+  amount         Decimal  @db.Decimal(14, 2)
+  commission     Decimal  @default(0) @db.Decimal(14, 2)
+  sourceAccount  String?  @map("source_account")
+  targetAccount  String?  @map("target_account")
+  customerPhone  String?  @map("customer_phone")
+  note           String?
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  shop           User     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  source         Account? @relation("TransactionSource", fields: [sourceAccount], references: [account_id], onDelete: SetNull)
+  target         Account? @relation("TransactionTarget", fields: [targetAccount], references: [account_id], onDelete: SetNull)
+
+  @@index([shopId, createdAt])
+  @@index([shopId, trxType])
+  @@map("transactions")
+}
+
+/// End-of-day reconciliation record.
+model DailyClosing {
+  id            String   @id @default(uuid()) @map("closing_id")
+  shopId        String   @map("shop_id")
+  date          DateTime @db.Date
+  expectedCash  Decimal  @db.Decimal(14, 2) @map("expected_cash")
+  actualCash    Decimal  @db.Decimal(14, 2) @map("actual_cash")
+  discrepancy   Decimal  @db.Decimal(14, 2)
+  totalProfit   Decimal  @default(0) @db.Decimal(14, 2) @map("total_profit")
+  isResolved    Boolean  @default(false) @map("is_resolved")
+  note          String?
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  shop          User @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@unique([shopId, date])
+  @@index([shopId, date])
+  @@map("daily_closings")
+}

@@ -1,0 +1,34 @@
+# Flutter / Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+build/
+.fvm/
+coverage/
+
+# IntelliJ / Android Studio
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# VS Code
+.vscode/
+
+# OS
+.DS_Store
+
+# Local config (contains Flutter SDK path)
+/android/local.properties
+
+# Generated files
+**/*.g.dart
+**/*.freezed.dart
+
+# Keystores (do not commit)
+*.jks
+*.keystore
+key.properties
