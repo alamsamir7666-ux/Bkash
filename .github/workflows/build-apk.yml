@@ -3,13 +3,19 @@ name: Build Flutter APK
 on:
   push:
     branches: [main, master]
-  pull_request:
-    branches: [main, master]
   workflow_dispatch:
+
+# Cancel any in-flight run for the same ref so we don't waste runner minutes.
+concurrency:
+  group: build-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write   # Required by softprops/action-gh-release to create releases.
 
 jobs:
   build-apk:
-    name: Build Debug APK
+    name: Build Release APKs (per-ABI)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -41,22 +47,91 @@ jobs:
       - name: Verify analysis (non-blocking)
         run: flutter analyze || true
 
-      - name: Build debug APK
+      - name: Build release APKs (one per ABI + obfuscated)
+        # --split-per-abi: produces 3 smaller APKs (armeabi-v7a, arm64-v8a, x86_64)
+        #   instead of one fat APK. Each is ~30-50% smaller.
+        # --obfuscate --split-debug-info: strips debug symbols from the Dart code,
+        #   further reducing APK size. Symbols are saved to build/symbols/ for
+        #   crash symbolisation (kept as an artifact).
+        # --release: full release optimisations (R8, resource shrinking, etc.).
         run: |
           flutter build apk \
-            --debug \
+            --release \
+            --split-per-abi \
+            --obfuscate \
+            --split-debug-info=build/symbols \
             --dart-define=API_BASE_URL=${{ vars.API_BASE_URL || 'http://10.0.2.2:3000/api' }}
 
-      - name: Rename APK
+      - name: List built APKs with sizes
+        run: |
+          echo "==> Built APKs:"
+          ls -lh build/app/outputs/flutter-apk/*.apk || true
+          echo
+          du -h build/app/outputs/flutter-apk/*.apk | sort -h
+
+      - name: Rename APKs for clarity
         run: |
           mkdir -p build/outputs/apk
-          cp build/app/outputs/flutter-apk/app-debug.apk \
-             build/outputs/apk/smart-shop-ledger-debug.apk
+          # arm64-v8a  → most modern Android phones (64-bit ARM)
+          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk \
+             build/outputs/apk/smart-shop-ledger-arm64-v8a.apk
+          # armeabi-v7a → older / low-end Android phones (32-bit ARM)
+          cp build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk \
+             build/outputs/apk/smart-shop-ledger-armeabi-v7a.apk
+          # x86_64     → emulators (rarely needed on a real phone)
+          cp build/app/outputs/flutter-apk/app-x86_64-release.apk \
+             build/outputs/apk/smart-shop-ledger-x86_64.apk
 
-      - name: Upload APK artifact
+      - name: Upload APKs as workflow artifact
         uses: actions/upload-artifact@v4
         with:
-          name: smart-shop-ledger-apk
-          path: frontend/build/outputs/apk/smart-shop-ledger-debug.apk
+          name: smart-shop-ledger-apks
+          path: |
+            frontend/build/outputs/apk/smart-shop-ledger-arm64-v8a.apk
+            frontend/build/outputs/apk/smart-shop-ledger-armeabi-v7a.apk
+            frontend/build/outputs/apk/smart-shop-ledger-x86_64.apk
           retention-days: 30
           if-no-files-found: error
+
+      - name: Upload debug symbols (for crash symbolisation)
+        uses: actions/upload-artifact@v4
+        with:
+          name: smart-shop-ledger-symbols
+          path: frontend/build/symbols
+          retention-days: 90
+          if-no-files-found: warn
+
+      - name: Create / update "latest" GitHub Release with APKs
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: Smart Shop Ledger (latest build)
+          body: |
+            # Smart Shop Ledger — Latest Build
+
+            Auto-built from commit ${{ github.sha }} on ${{ github.event.head_commit.timestamp }}.
+
+            ## Which APK should I install?
+
+            | APK | Architecture | Devices |
+            |---|---|---|
+            | **smart-shop-ledger-arm64-v8a.apk** | 64-bit ARM | **Most modern Android phones** — pick this if unsure |
+            | smart-shop-ledger-armeabi-v7a.apk | 32-bit ARM | Older / low-end phones (Android 6–9) |
+            | smart-shop-ledger-x86_64.apk | x86_64 | Android emulators only |
+
+            ## Installation
+
+            1. Download the APK to your phone
+            2. Tap the downloaded file in your file manager
+            3. Allow "Install from unknown sources" if prompted
+            4. Tap "Install"
+
+            ## What's new
+
+            Commit: ${{ github.event.head_commit.message }}
+          draft: false
+          prerelease: false
+          files: |
+            frontend/build/outputs/apk/smart-shop-ledger-arm64-v8a.apk
+            frontend/build/outputs/apk/smart-shop-ledger-armeabi-v7a.apk
+            frontend/build/outputs/apk/smart-shop-ledger-x86_64.apk

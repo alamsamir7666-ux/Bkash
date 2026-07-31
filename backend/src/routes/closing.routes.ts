@@ -68,7 +68,7 @@ router.post(
     const authReq = req as AuthedRequest;
     const body = req.body as z.infer<typeof submitSchema>;
     const date = new Date(body.date);
-    const { startOfDay } = dayBounds(date);
+    const { startOfDay, endOfDay } = dayBounds(date);
 
     const cashAccount = await prisma.account.findFirst({
       where: { shopId: authReq.user.id, accountType: 'physical_cash' },
@@ -78,7 +78,7 @@ router.post(
     const agg = await prisma.transaction.aggregate({
       where: {
         shopId: authReq.user.id,
-        createdAt: { gte: startOfDay, lte: endOfDay(date) },
+        createdAt: { gte: startOfDay, lte: endOfDay },
       },
       _sum: { commission: true },
     });

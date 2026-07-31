@@ -202,7 +202,7 @@ router.delete(
           data: { balance: { decrement: trx.amount } },
         });
       }
-      if (trx.commission > 0 && trx.targetAccount && trx.trxType !== 'expense') {
+      if (Number(trx.commission) > 0 && trx.targetAccount && trx.trxType !== 'expense') {
         await tx.account.update({
           where: { id: trx.targetAccount },
           data: { balance: { decrement: trx.commission } },

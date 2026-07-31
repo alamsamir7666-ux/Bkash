@@ -47,8 +47,13 @@ android {
             // For now, sign release builds with the debug key so the APK
             // is installable on any device without a separate keystore.
             signingConfig signingConfigs.debug
-            minifyEnabled false
-            shrinkResources false
+
+            // Enable R8 code shrinking + resource shrinking for smaller APKs.
+            // R8 also handles ProGuard rules — Flutter ships sensible defaults
+            // via flutter/proguard_rules.pro so we don't need a custom file.
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
         debug {
             signingConfig signingConfigs.debug
