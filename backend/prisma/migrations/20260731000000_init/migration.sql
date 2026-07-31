@@ -5,18 +5,19 @@
 
 -- ─── users ─────────────────────────────────────────────────────────────────
 CREATE TABLE "users" (
-    "id"         TEXT        NOT NULL,
-    "email"      TEXT        NOT NULL,
-    "password"   TEXT        NOT NULL,
-    "name"       TEXT        NOT NULL,
-    "phone"      TEXT,
-    "role"       TEXT        NOT NULL DEFAULT 'admin',
-    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "id"           TEXT        NOT NULL,
+    "firebase_uid" TEXT        NOT NULL,
+    "email"        TEXT        NOT NULL,
+    "name"         TEXT        NOT NULL,
+    "phone"        TEXT,
+    "role"         TEXT        NOT NULL DEFAULT 'admin',
+    "created_at"   TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "users_pkey" PRIMARY KEY ("id")
 );
 
 CREATE UNIQUE INDEX "users_email_key" ON "users"("email");
+CREATE UNIQUE INDEX "users_firebase_uid_key" ON "users"("firebase_uid");
 
 -- ─── accounts ──────────────────────────────────────────────────────────────
 CREATE TABLE "accounts" (

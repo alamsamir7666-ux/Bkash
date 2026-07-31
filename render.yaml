@@ -1,6 +1,6 @@
 # Render Blueprint for Smart Shop Ledger backend.
 # Use this for one-click deploy via https://render.com/deploy.
-# After deploy, set the Supabase DATABASE_URL + DIRECT_URL env vars manually.
+# After deploy, set the Supabase DATABASE_URL + DIRECT_URL + Firebase env vars manually.
 
 services:
   - type: web
@@ -16,13 +16,15 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
-      - key: JWT_EXPIRES_IN
-        value: 7d
       - key: CORS_ORIGIN
         value: "*"
-      - key: JWT_SECRET
-        generateValue: true   # Render auto-generates a random value
       - key: DATABASE_URL
         sync: false           # Set manually from Supabase (transaction pooler URL)
       - key: DIRECT_URL
         sync: false           # Set manually from Supabase (direct connection URL)
+      - key: FIREBASE_PROJECT_ID
+        sync: false           # Set from Firebase service account JSON
+      - key: FIREBASE_CLIENT_EMAIL
+        sync: false           # Set from Firebase service account JSON
+      - key: FIREBASE_PRIVATE_KEY
+        sync: false           # Set from Firebase service account JSON (keep \n escapes)

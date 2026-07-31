@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../features/auth/view/login_screen.dart';
+import '../features/auth/view/onboarding_screen.dart';
 import '../features/auth/view/register_screen.dart';
 import '../features/dashboard/view/dashboard_screen.dart';
 import '../features/reconciliation/view/closing_history_screen.dart';
@@ -19,13 +20,26 @@ final routerProvider = Provider<GoRouter>((ref) {
     refreshListenable: _AuthRefresh(ref),
     redirect: (context, state) {
       final isAuthenticated = auth.isAuthenticated;
+      final requiresOnboarding = auth.requiresOnboarding;
       final isLoading = auth.loading;
       final isAuthRoute = state.matchedLocation == '/login' ||
-          state.matchedLocation == '/register';
+          state.matchedLocation == '/register' ||
+          state.matchedLocation == '/onboarding';
 
       if (isLoading) return null;
+
+      // User is signed in via Firebase but hasn't onboarded yet.
+      // Force them to the onboarding screen.
+      if (requiresOnboarding && state.matchedLocation != '/onboarding') {
+        return '/onboarding';
+      }
+      // Once onboarded, leave the onboarding screen.
+      if (!requiresOnboarding && isAuthenticated && state.matchedLocation == '/onboarding') {
+        return '/';
+      }
+
       if (!isAuthenticated && !isAuthRoute) return '/login';
-      if (isAuthenticated && isAuthRoute) return '/';
+      if (isAuthenticated && isAuthRoute && !requiresOnboarding) return '/';
       return null;
     },
     routes: [
@@ -36,6 +50,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/register',
         builder: (context, state) => const RegisterScreen(),
+      ),
+      GoRoute(
+        path: '/onboarding',
+        builder: (context, state) => const OnboardingScreen(),
       ),
       ShellRoute(
         builder: (context, state, child) => _Shell(child: child),

@@ -16,17 +16,18 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
-/// Shop owner / employee. Authenticated via JWT issued by the backend.
-/// (In the original blueprint this was synced from Firebase Auth; here
-/// the backend owns both auth + profile for stack consistency.)
+/// Shop owner / employee. Identity is owned by Firebase Auth; this table
+/// only holds business profile data and is keyed by the Firebase UID.
+/// The backend creates a User row lazily on first request with a valid
+/// Firebase ID token (verified via firebase-admin).
 model User {
-  id        String   @id @default(uuid())
-  email     String   @unique
-  password  String
-  name      String
-  phone     String?
-  role      String   @default("admin") // admin | staff
-  createdAt DateTime @default(now()) @map("created_at")
+  id          String   @id @default(uuid())
+  firebaseUid String   @unique @map("firebase_uid")
+  email       String   @unique
+  name        String
+  phone       String?
+  role        String   @default("admin") // admin | staff
+  createdAt   DateTime @default(now()) @map("created_at")
 
   accounts     Account[]
   transactions Transaction[]

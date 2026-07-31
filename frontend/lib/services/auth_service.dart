@@ -1,88 +1,140 @@
-import 'package:dio/dio.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
-import '../core/config/app_config.dart';
 import '../models/user_model.dart';
 import 'api_client.dart';
 
 final authServiceProvider = Provider<AuthService>((ref) => AuthService(ref));
 
-/// Handles login / register / logout against the Node.js backend and
-/// persists the issued JWT in secure storage.
+/// Handles authentication via Firebase Auth (email/password) and
+/// bridges to the Node.js backend for user profile data.
 ///
-/// The backend is responsible for hashing passwords (bcrypt) and signing
-/// the JWT; this class only orchestrates HTTP + storage.
+/// Flow:
+///   - login(email, password):
+///       1. FirebaseAuth.signInWithEmailAndPassword() — Firebase owns identity
+///       2. backend GET /auth/me — fetch the user's business profile
+///       3. If /me returns 404, the user hasn't onboarded yet; throw
+///          [OnboardingRequiredException] so the UI can route them to
+///          the onboarding screen.
+///
+///   - register(name, email, password, phone):
+///       1. FirebaseAuth.createUserWithEmailAndPassword() — creates Firebase user
+///       2. Get the user's fresh ID token
+///       3. backend POST /auth/onboard { name, phone } — creates the User row
+///          + 3 default account pockets (agent_bKash, personal_bKash, physical_cash)
+///
+///   - logout(): FirebaseAuth.signOut() — the backend is stateless.
 class AuthService {
   AuthService(this.ref);
   final Ref ref;
 
   Dio get _dio => ref.read(dioProvider);
+  FirebaseAuth get _auth => FirebaseAuth.instance;
 
-  Future<({UserModel user, String token})> login({
+  /// Signs in with Firebase, then fetches the user's profile from the backend.
+  ///
+  /// Throws [OnboardingRequiredException] if the user exists in Firebase but
+  /// hasn't completed onboarding (POST /auth/onboard) yet.
+  Future<UserModel> login({
     required String email,
     required String password,
   }) async {
+    // 1. Firebase sign-in
+    await _auth.signInWithEmailAndPassword(email: email, password: password);
+
+    // 2. Fetch profile from backend
     try {
-      final res = await _dio.post(
-        '/auth/login',
-        data: {'email': email, 'password': password},
-      );
-      return _persist(res.data as Map<String, dynamic>);
-    } on DioException catch (e) {
-      throw ApiException.fromDio(e);
+      final res = await _dio.get('/auth/me');
+      return UserModel.fromJson(res.data['user'] as Map<String, dynamic>);
+    } on ApiException catch (e) {
+      if (e.statusCode == 404) {
+        throw OnboardingRequiredException();
+      }
+      rethrow;
     }
   }
 
-  Future<({UserModel user, String token})> register({
+  /// Creates a Firebase user, then onboards them on the backend (creates
+  /// the User row + 3 default account pockets).
+  Future<UserModel> register({
     required String name,
     required String email,
     required String password,
     String? phone,
   }) async {
+    // 1. Create Firebase user (auto-signs in)
+    await _auth.createUserWithEmailAndPassword(email: email, password: password);
+
+    // 2. Onboard on backend — AuthInterceptor will attach the Firebase ID token
     try {
-      final res = await _dio.post(
-        '/auth/register',
-        data: {
-          'name': name,
-          'email': email,
-          'password': password,
-          if (phone != null && phone.isNotEmpty) 'phone': phone,
-        },
-      );
-      return _persist(res.data as Map<String, dynamic>);
-    } on DioException catch (e) {
-      throw ApiException.fromDio(e);
+      final res = await _dio.post('/auth/onboard', data: {
+        'name': name,
+        if (phone != null && phone.isNotEmpty) 'phone': phone,
+      });
+      return UserModel.fromJson(res.data['user'] as Map<String, dynamic>);
+    } on ApiException catch (e) {
+      // If onboarding fails (e.g. network), sign out so the user can retry
+      // from a clean state next time.
+      await _auth.signOut();
+      rethrow;
     }
   }
 
+  /// Fetches the current user's profile from the backend. Throws
+  /// [OnboardingRequiredException] if the user is signed in via Firebase
+  /// but hasn't onboarded yet.
   Future<UserModel> me() async {
     try {
       final res = await _dio.get('/auth/me');
       return UserModel.fromJson(res.data['user'] as Map<String, dynamic>);
-    } on DioException catch (e) {
-      throw ApiException.fromDio(e);
+    } on ApiException catch (e) {
+      if (e.statusCode == 404) {
+        throw OnboardingRequiredException();
+      }
+      rethrow;
+    }
+  }
+
+  /// Completes onboarding for a user who is already signed in via Firebase
+  /// (e.g. they signed in with login() and got OnboardingRequiredException).
+  /// Calls POST /auth/onboard to create the User row + 3 default accounts.
+  Future<UserModel> onboard({
+    required String name,
+    String? phone,
+  }) async {
+    try {
+      final res = await _dio.post('/auth/onboard', data: {
+        'name': name,
+        if (phone != null && phone.isNotEmpty) 'phone': phone,
+      });
+      return UserModel.fromJson(res.data['user'] as Map<String, dynamic>);
+    } on ApiException catch (e) {
+      if (e.statusCode == 409) {
+        // Already onboarded — just fetch the profile.
+        return me();
+      }
+      rethrow;
     }
   }
 
   Future<void> logout() async {
-    const storage = FlutterSecureStorage();
-    await storage.delete(key: AppConfig.accessTokenKey);
-    await storage.delete(key: AppConfig.userIdKey);
+    await _auth.signOut();
   }
 
-  Future<String?> get cachedToken async {
-    const storage = FlutterSecureStorage();
-    return storage.read(key: AppConfig.accessTokenKey);
-  }
+  /// Returns the current Firebase user (or null if signed out).
+  User? get currentFirebaseUser => _auth.currentUser;
 
-  ({UserModel user, String token}) _persist(Map<String, dynamic> body) {
-    final token = body['token'] as String;
-    final user = UserModel.fromJson(body['user'] as Map<String, dynamic>);
+  /// Stream of Firebase auth state changes. Used by AuthNotifier to
+  /// reactively rebuild the UI on sign-in / sign-out.
+  Stream<User?> get authStateChanges => _auth.authStateChanges();
+}
 
-    const storage = FlutterSecureStorage();
-    storage.write(key: AppConfig.accessTokenKey, value: token);
-    storage.write(key: AppConfig.userIdKey, value: user.id);
-    return (user: user, token: token);
-  }
+/// Thrown when the user exists in Firebase but hasn't onboarded yet
+/// (no User row in the backend DB). The UI should catch this and
+/// navigate to the onboarding screen.
+class OnboardingRequiredException implements Exception {
+  final String message = 'Onboarding required — please complete your profile';
+  OnboardingRequiredException();
+  @override
+  String toString() => message;
 }

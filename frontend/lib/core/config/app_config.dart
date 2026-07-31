@@ -15,12 +15,6 @@ class AppConfig {
     defaultValue: 'http://10.0.2.2:3000/api',
   );
 
-  /// Secure storage key for the JWT access token.
-  static const String accessTokenKey = 'auth_token';
-
-  /// Secure storage key for the cached user id.
-  static const String userIdKey = 'user_id';
-
   /// App name shown in the UI.
   static const String appName = 'Smart Shop Ledger';
 

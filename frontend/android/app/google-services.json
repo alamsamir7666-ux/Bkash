@@ -1,18 +1,28 @@
 {
   "project_info": {
-    "project_number": "",
-    "project_id": ""
+    "project_number": "837630122314",
+    "project_id": "bkash-731a8",
+    "storage_bucket": "bkash-731a8.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "",
+        "mobilesdk_app_id": "1:837630122314:android:a7135156110141b66b09b3",
         "android_client_info": {
           "package_name": "com.smartshopledger.app"
         }
       },
-      "api_key": [],
-      "services": {}
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDR0LYFudaFjN1rBnwE8zaPz27OzoUtDqk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
     }
   ],
   "configuration_version": "1"

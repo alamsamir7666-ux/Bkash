@@ -1,13 +1,16 @@
 import 'package:dio/dio.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pretty_dio_logger/pretty_dio_logger.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../core/config/app_config.dart';
 
 /// Central Dio instance configured with the backend base URL and an
-/// interceptor that attaches the JWT auth token from secure storage.
+/// interceptor that attaches the Firebase ID token to every request.
+///
+/// The token is obtained fresh from FirebaseAuth on each request —
+/// Firebase handles caching/refresh internally, so this is cheap.
 ///
 /// Errors are normalised into [ApiException] so the UI layer never has to
 /// deal with raw Dio error types.
@@ -34,24 +37,24 @@ final dioProvider = Provider<Dio>((ref) {
     );
   }
 
-  dio.interceptors.add(AuthInterceptor(ref));
+  dio.interceptors.add(FirebaseAuthInterceptor());
   return dio;
 });
 
-/// Injects the cached JWT into every outgoing request and handles
-/// 401 responses by clearing the session (forcing a re-login).
-class AuthInterceptor extends Interceptor {
-  AuthInterceptor(this.ref);
-  final Ref ref;
-
+/// Injects the current Firebase user's ID token into every outgoing
+/// request. If the user is not signed in, the request goes out without
+/// an Authorization header (the backend will return 401 if auth is required).
+class FirebaseAuthInterceptor extends Interceptor {
   @override
   Future<void> onRequest(
     RequestOptions options,
     RequestInterceptorHandler handler,
   ) async {
-    const storage = FlutterSecureStorage();
-    final token = await storage.read(key: AppConfig.accessTokenKey);
-    if (token != null && token.isNotEmpty) {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      // getIdToken(forceRefresh: false) returns a cached token if still valid,
+      // or fetches a fresh one automatically if expired.
+      final token = await user.getIdToken();
       options.headers['Authorization'] = 'Bearer $token';
     }
     handler.next(options);
@@ -63,9 +66,9 @@ class AuthInterceptor extends Interceptor {
     ErrorInterceptorHandler handler,
   ) async {
     if (err.response?.statusCode == 401) {
-      const storage = FlutterSecureStorage();
-      await storage.delete(key: AppConfig.accessTokenKey);
-      await storage.delete(key: AppConfig.userIdKey);
+      // Token might be stale or the user was deleted server-side.
+      // Sign out so the UI returns to the login screen.
+      await FirebaseAuth.instance.signOut();
     }
     handler.next(err);
   }
