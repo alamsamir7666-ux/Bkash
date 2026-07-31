@@ -21,6 +21,20 @@
 # Keep model classes (generated Dart code references them by name).
 -keep class com.smartshopledger.app.** { *; }
 
+# ─── Google Play Core (split APKs / dynamic delivery) ───────────────────────
+# Flutter's FlutterPlayStoreSplitApplication references Play Core classes via
+# reflection. We don't ship through the Play Store (we distribute APKs
+# directly), so these classes are never actually called at runtime — but R8
+# still complains that they're missing. Tell R8 to ignore them.
+# (R8 generates these rules into build/.../missing_rules.txt — we add them
+# here proactively so the build doesn't fail.)
+-dontwarn com.google.android.play.core.splitcompat.**
+-dontwarn com.google.android.play.core.splitinstall.**
+-dontwarn com.google.android.play.core.assetpacks.**
+-dontwarn com.google.android.play.core.review.**
+-dontwarn com.google.android.play.core.**
+-keep class com.google.android.play.core.** { *; }
+
 # ─── Standard Android ──────────────────────────────────────────────────────
 -keepclassmembers class * {
     @androidx.annotation.Keep <methods>;
