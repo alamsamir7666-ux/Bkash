@@ -52,21 +52,32 @@ class AuthService {
         throw OnboardingRequiredException();
       }
       rethrow;
+    } on DioException catch (e) {
+      throw ApiException.fromDio(e);
     }
   }
 
   /// Creates a Firebase user, then onboards them on the backend (creates
   /// the User row + 3 default account pockets).
+  ///
+  /// If [createUserWithEmailAndPassword] succeeds but the backend /onboard
+  /// call fails, we deliberately do NOT sign out — that would discard the
+  /// freshly-created Firebase user. Instead, the next time the user opens
+  /// the app, /auth/me will 404 and they'll be routed to the onboarding
+  /// screen to retry just the backend step.
   Future<UserModel> register({
     required String name,
     required String email,
     required String password,
     String? phone,
   }) async {
-    // 1. Create Firebase user (auto-signs in)
+    // 1. Create Firebase user (auto-signs in).
+    // NOTE: FirebaseAuthException is thrown for email-already-in-use, weak
+    // password, invalid email, etc. The caller (AuthNotifier._friendlyError)
+    // translates these into human-readable messages.
     await _auth.createUserWithEmailAndPassword(email: email, password: password);
 
-    // 2. Onboard on backend — AuthInterceptor will attach the Firebase ID token
+    // 2. Onboard on backend — AuthInterceptor will attach the Firebase ID token.
     try {
       final res = await _dio.post('/auth/onboard', data: {
         'name': name,
@@ -74,10 +85,17 @@ class AuthService {
       });
       return UserModel.fromJson(res.data['user'] as Map<String, dynamic>);
     } on ApiException catch (e) {
-      // If onboarding fails (e.g. network), sign out so the user can retry
-      // from a clean state next time.
-      await _auth.signOut();
+      if (e.statusCode == 409) {
+        // Already onboarded (e.g. previous call succeeded but client timed
+        // out before receiving the response). Just fetch the profile.
+        return me();
+      }
+      // For any other backend error, rethrow so the UI can show it. The
+      // user is still Firebase-signed-in; on next app launch, /auth/me
+      // will 404 and route them to the onboarding screen to retry.
       rethrow;
+    } on DioException catch (e) {
+      throw ApiException.fromDio(e);
     }
   }
 
@@ -93,6 +111,8 @@ class AuthService {
         throw OnboardingRequiredException();
       }
       rethrow;
+    } on DioException catch (e) {
+      throw ApiException.fromDio(e);
     }
   }
 
@@ -115,6 +135,8 @@ class AuthService {
         return me();
       }
       rethrow;
+    } on DioException catch (e) {
+      throw ApiException.fromDio(e);
     }
   }
 

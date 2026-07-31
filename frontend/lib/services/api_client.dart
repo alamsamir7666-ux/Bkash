@@ -68,7 +68,9 @@ class FirebaseAuthInterceptor extends Interceptor {
     if (err.response?.statusCode == 401) {
       // Token might be stale or the user was deleted server-side.
       // Sign out so the UI returns to the login screen.
-      await FirebaseAuth.instance.signOut();
+      // NOTE: don't await — we want the original error to propagate to the
+      // caller immediately so they can show a snackbar.
+      FirebaseAuth.instance.signOut();
     }
     handler.next(err);
   }
@@ -90,7 +92,24 @@ class ApiException implements Exception {
     final data = err.response?.data;
     String message = err.message ?? 'Network error';
     if (data is Map<String, dynamic>) {
-      message = data['message'] as String? ?? data['error'] as String? ?? message;
+      message =
+          data['message'] as String? ?? data['error'] as String? ?? message;
+    }
+    // Dio's default err.message for connection / timeout errors is often an
+    // ugly dump like "Connecting to xxx timed out [Error: ...]" or a raw
+    // SocketException. Replace those with friendlier text so the UI can show
+    // them directly.
+    if (err.type == DioExceptionType.connectionTimeout ||
+        err.type == DioExceptionType.sendTimeout ||
+        err.type == DioExceptionType.receiveTimeout) {
+      message = 'The server took too long to respond. Check your connection and try again.';
+    } else if (err.type == DioExceptionType.connectionError) {
+      message = 'Cannot reach the server. Check your internet connection.';
+    } else if (err.type == DioExceptionType.cancel) {
+      message = 'Request was cancelled.';
+    } else if (err.type == DioExceptionType.unknown &&
+        message.contains('HandshakeException')) {
+      message = 'Secure connection failed. Check your device date/time and try again.';
     }
     return ApiException(
       message: message,
